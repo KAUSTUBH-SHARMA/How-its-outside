@@ -1,15 +1,27 @@
 package com.example.howitsoutside;
 
+import android.Manifest;
+import android.app.ProgressDialog;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.databinding.DataBindingUtil;
 import android.graphics.drawable.Drawable;
+import android.location.Address;
+import android.location.Geocoder;
+import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
+import android.support.annotation.NonNull;
+import android.support.v4.app.ActivityCompat;
+import android.support.v4.content.ContextCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
 import android.widget.ImageView;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.example.howitsoutside.databinding.ActivityMainBinding;
@@ -22,6 +34,8 @@ import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.ArrayList;
+import java.util.List;
+import java.util.Locale;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -29,30 +43,42 @@ import okhttp3.OkHttpClient;
 import okhttp3.Request;
 import okhttp3.Response;
 
-public class MainActivity extends AppCompatActivity {
-    public static final String TAG=MainActivity.class.getSimpleName();
+public class MainActivity extends AppCompatActivity implements LocationListener {
+
+    private LocationManager locationManager;
+    private ProgressDialog pd;
+
+
+    public static final String TAG = MainActivity.class.getSimpleName();
     private CurrentWeather currentWeather;
     private ImageView iconImageView;
-    final double latitude=28.6517;
-    final double longitude=77.2219;
+    private TextView textViewLocationName;
+
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getForcast(latitude,longitude);
 
+        pd = new ProgressDialog(this);
+        locationManager = (LocationManager) getSystemService(Context.LOCATION_SERVICE);
+
+        getLocationAndFetchWeatherDetail();
     }
 
-    private void getForcast(double latitude,double longitude ) {
+    private void getForecast(double latitude,double longitude) {
         final ActivityMainBinding binding= DataBindingUtil.setContentView(MainActivity.this,R.layout.activity_main) ;
 
         iconImageView =findViewById(R.id.iconImageView);
+        textViewLocationName = findViewById(R.id.txvLocationName);
         String apiKey=getAPIKey();
 
-        String forcastURL="https://api.darksky.net/forecast/"+apiKey+"/"+latitude+","+longitude;
+        String forecastURL="https://api.darksky.net/forecast/" + apiKey + "/"
+                + latitude + "," + longitude;
+
         if(isNetworkAvailable()) {
             OkHttpClient client = new OkHttpClient();
             Request request = new Request.Builder()
-                    .url(forcastURL)
+                    .url(forecastURL)
                     .build();
             Call call = client.newCall(request);
             call.enqueue(new Callback() {
@@ -69,7 +95,7 @@ public class MainActivity extends AppCompatActivity {
                         if (response.isSuccessful()) {
                             currentWeather=getCurrentDetails(jsonData);
 
-                             final CurrentWeather displayWeather=new CurrentWeather(
+                             final CurrentWeather displayWeather = new CurrentWeather(
                                     currentWeather.getLocationLabel(),
                                     currentWeather.getIcon(),
                                     currentWeather.getTime(),
@@ -79,27 +105,68 @@ public class MainActivity extends AppCompatActivity {
                                     currentWeather.getSummary(),
                                     currentWeather.getTimeZone()
                             );
+
                             binding.setWeather(displayWeather);
+
                             runOnUiThread(new Runnable() {
                                 @Override
                                 public void run() {
+                                    pd.cancel();
                                     Drawable drawable=getResources().getDrawable(displayWeather.getIconId());
                                     iconImageView.setImageDrawable(drawable);
+                                    textViewLocationName.setText(displayWeather.getLocationLabel());
                                 }
                             });
 
                         } else {
+                            pd.cancel();
                             alertUserAboutError();
                         }
                     } catch (IOException e) {
+                        pd.cancel();
                         Log.e(TAG, "IO Exception caught: ", e);
 
                     } catch(JSONException e){
+                        pd.cancel();
                         Log.e(TAG,"JSON Exception caught",e);
                     }
 
                 }
             });
+        }
+    }
+
+    private void getLocationAndFetchWeatherDetail(){
+
+        // try to get the location of the user
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED &&
+                ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+            askForRequiredPermission();
+            return;
+        }
+
+        // fetching user's location on a 10km radius zone
+        locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 10, this);
+        locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 0, 10, this);
+
+        pd.setTitle("Getting current Location");
+        pd.setMessage("Taking too long? Try switching on GPS.");
+        pd.show();
+
+    }
+
+    public void askForRequiredPermission() {
+        // ask for location permission
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_FINE_LOCATION}, 0);
+        }
+
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            ActivityCompat.requestPermissions(this,
+                    new String[]{Manifest.permission.ACCESS_COARSE_LOCATION}, 0);
         }
     }
 
@@ -165,7 +232,50 @@ public class MainActivity extends AppCompatActivity {
         dialog.show(getFragmentManager(),"error_dialog");
     }
     public void refreshOnClick(View view){
-        getForcast(latitude,longitude);
+        getLocationAndFetchWeatherDetail();
         Toast.makeText(this,"Refreshing data",Toast.LENGTH_LONG).show();
     }
+
+    @Override
+    public void onLocationChanged(Location location) {
+        getForecast(location.getLatitude(),location.getLongitude());
+    }
+
+    @Override
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+
+    }
+
+    @Override
+    public void onProviderEnabled(String provider) {
+
+    }
+
+    @Override
+    public void onProviderDisabled(String provider) {
+
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+
+            if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) != PackageManager.PERMISSION_GRANTED) {
+                return;
+            }
+
+            locationManager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 0, 10, this);
+            locationManager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER,0,10,this);
+
+            pd.setMessage("Getting current Location...");
+            pd.show();
+        }
+        else{
+            Toast.makeText(getApplicationContext(), "Location access is required", Toast.LENGTH_SHORT).show();
+        }
+
+    }
+
 }
