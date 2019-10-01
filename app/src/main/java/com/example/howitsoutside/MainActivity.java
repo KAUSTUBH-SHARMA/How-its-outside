@@ -18,7 +18,10 @@ import org.jetbrains.annotations.NotNull;
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.util.ArrayList;
 
 import okhttp3.Call;
 import okhttp3.Callback;
@@ -43,7 +46,7 @@ public class MainActivity extends AppCompatActivity {
         final ActivityMainBinding binding= DataBindingUtil.setContentView(MainActivity.this,R.layout.activity_main) ;
 
         iconImageView =findViewById(R.id.iconImageView);
-        String apiKey=""; // your api key
+        String apiKey=getAPIKey();
 
         String forcastURL="https://api.darksky.net/forecast/"+apiKey+"/"+latitude+","+longitude;
         if(isNetworkAvailable()) {
@@ -98,6 +101,32 @@ public class MainActivity extends AppCompatActivity {
                 }
             });
         }
+    }
+
+    /*
+    * an utility method that reads the file 'api_key' from the assets folder and fetches
+    * the api key stored in that file, that way we don't have to hard code the api
+    * in the main code
+    * */
+    private String getAPIKey() {
+
+        try{
+            BufferedReader bufferedReader = new BufferedReader(
+                    new InputStreamReader(getAssets().open("api_key"))); // file that contains the api key
+            String line;
+            /*
+            * the api key is only a single line string, thus
+            * reading a single line once works pretty well
+            * */
+            line = bufferedReader.readLine();
+            bufferedReader.close();
+            return line;
+        } catch (Exception e){
+            e.printStackTrace();
+        }
+
+        return null;
+
     }
 
     private CurrentWeather getCurrentDetails(String jsonData) throws JSONException {
